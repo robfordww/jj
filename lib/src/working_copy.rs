@@ -235,11 +235,22 @@ pub struct SnapshotOptions<'a> {
 /// A callback for getting progress updates.
 pub type SnapshotProgress<'a> = dyn Fn(&RepoPath) + 'a + Sync;
 
+/// Kind of ignored path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IgnoredPathType {
+    /// Ignored directory path.
+    Directory,
+    /// Ignored file path.
+    File,
+}
+
 /// Stats about a snapshot operation on a working copy.
 #[derive(Clone, Debug, Default)]
 pub struct SnapshotStats {
     /// List of new (previously untracked) files which are still untracked.
     pub untracked_paths: BTreeMap<RepoPathBuf, UntrackedReason>,
+    /// Ignored files and directories encountered while snapshotting.
+    pub ignored_paths: BTreeMap<RepoPathBuf, IgnoredPathType>,
 }
 
 /// Reason why the new path isn't tracked.

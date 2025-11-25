@@ -74,6 +74,10 @@ Ignored files are never tracked automatically (regardless of the value of
 even if they match ignore patterns. You can untrack such files with the
 `jj file untrack` command.
 
+To inspect which paths are currently ignored, run `jj status --ignored`. It
+accepts the same fileset filters described in [`filesets.md`](filesets.md) and
+behaves similarly to `git status --ignored`.
+
 
 ## Workspaces
 

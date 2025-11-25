@@ -50,6 +50,13 @@
     `jj st`
   Notes: ''
 
+- Use case: List ignored files
+  Git command: >
+    `git status --ignored`
+  Jujutsu command: >
+    `jj status --ignored`
+  Notes: ''
+
 - Use case: Show diff of the current change
   Git command: >
     `git diff HEAD`

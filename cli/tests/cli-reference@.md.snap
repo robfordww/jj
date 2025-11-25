@@ -2871,6 +2871,12 @@ This includes:
 
 * `<FILESETS>` — Restrict the status display to these paths
 
+###### **Options:**
+
+* `--ignored` — List ignored files in the working copy
+
+   Behaves similarly to `git status --ignored`.
+
 
 
 ## `jj tag`

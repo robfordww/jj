@@ -86,6 +86,9 @@ should not be broken.
 * Added `format_path(path)` template that controls how file paths are printed
   with `jj file list`.
 
+* `jj status` now accepts `--ignored` to list ignored working copy files,
+  similar to `git status --ignored`.
+
 * New built-in revset aliases `visible()` and `hidden()`.
 
 * Unquoted `*` is now allowed in revsets. `bookmarks(glob:foo*)` no longer

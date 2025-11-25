@@ -123,6 +123,37 @@ fn test_status_filtered() {
 }
 
 #[test]
+fn test_status_shows_ignored_paths() {
+    let test_env = TestEnvironment::default();
+    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
+    let work_dir = test_env.work_dir("repo");
+
+    work_dir.run_jj(["new"]).success();
+    work_dir.write_file(".gitignore", "ignored/\n*.tmp\n");
+    work_dir.create_dir("ignored");
+    work_dir.write_file("ignored/file.txt", "");
+    work_dir.write_file("foo.tmp", "");
+
+    let output = work_dir
+        .run_jj(["status", "--ignored"])
+        .normalize_backslash()
+        .normalize_stdout_with(|stdout| {
+            stdout
+                .lines()
+                .filter(|line| line.starts_with("Ignored paths") || line.starts_with("!! "))
+                .map(|line| format!("{line}\n"))
+                .collect::<String>()
+        });
+    insta::assert_snapshot!(output, @r"
+    Ignored paths:
+    !! .jj/
+    !! ignored/
+    !! foo.tmp
+    [EOF]
+    ");
+}
+
+#[test]
 fn test_status_conflicted_bookmarks() {
     // create conflicted local bookmark
     let test_env = TestEnvironment::default();

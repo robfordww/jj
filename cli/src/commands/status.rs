@@ -21,6 +21,7 @@ use jj_lib::repo_path::RepoPath;
 use jj_lib::repo_path::RepoPathBuf;
 use jj_lib::revset::RevsetExpression;
 use jj_lib::revset::RevsetFilterPredicate;
+use jj_lib::working_copy::IgnoredPathType;
 use pollster::FutureExt as _;
 use tracing::instrument;
 
@@ -52,6 +53,12 @@ pub(crate) struct StatusArgs {
     /// Restrict the status display to these paths
     #[arg(value_name = "FILESETS", value_hint = clap::ValueHint::AnyPath)]
     paths: Vec<String>,
+
+    /// List ignored files in the working copy
+    ///
+    /// Behaves similarly to `git status --ignored`.
+    #[arg(long)]
+    ignored: bool,
 }
 
 #[instrument(skip_all)]
@@ -129,6 +136,54 @@ pub(crate) fn cmd_status(
                     },
                 )
                 .block_on()?;
+            }
+        }
+
+        if args.ignored {
+            let mut ignored_entries: Vec<_> = snapshot_stats
+                .ignored_paths
+                .iter()
+                .filter(|(path, _)| matcher.matches(path.as_ref()))
+                .map(|(path, kind)| (path.clone(), *kind))
+                .collect();
+            ignored_entries.sort_by(|(path_a, _), (path_b, _)| path_a.cmp(path_b));
+            let mut collapsed_dirs = Vec::new();
+            let mut ignored_files = Vec::new();
+            for (path, kind) in ignored_entries {
+                if matches!(kind, IgnoredPathType::Directory) {
+                    if collapsed_dirs
+                        .last()
+                        .is_some_and(|prev: &RepoPathBuf| path.starts_with(prev.as_ref()))
+                    {
+                        continue;
+                    }
+                    collapsed_dirs.push(path);
+                } else {
+                    if collapsed_dirs
+                        .iter()
+                        .any(|dir| path.starts_with(dir.as_ref()))
+                    {
+                        continue;
+                    }
+                    ignored_files.push(path);
+                }
+            }
+            writeln!(formatter, "Ignored paths:")?;
+            if collapsed_dirs.is_empty() && ignored_files.is_empty() {
+                writeln!(formatter, "  (none)")?;
+            } else {
+                for path in &collapsed_dirs {
+                    let ui_path = workspace_command.path_converter().format_file_path(path);
+                    writeln!(
+                        formatter.labeled("diff").labeled("ignored"),
+                        "!! {ui_path}{sep}",
+                        sep = std::path::MAIN_SEPARATOR
+                    )?;
+                }
+                for path in &ignored_files {
+                    let ui_path = workspace_command.path_converter().format_file_path(&path);
+                    writeln!(formatter.labeled("diff").labeled("ignored"), "!! {ui_path}")?;
+                }
             }
         }
 

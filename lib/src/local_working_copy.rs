@@ -112,6 +112,7 @@ use crate::settings::UserSettings;
 use crate::store::Store;
 use crate::working_copy::CheckoutError;
 use crate::working_copy::CheckoutStats;
+use crate::working_copy::IgnoredPathType;
 use crate::working_copy::LockedWorkingCopy;
 use crate::working_copy::ResetError;
 use crate::working_copy::SnapshotError;
@@ -1110,6 +1111,7 @@ impl TreeState {
         let (file_states_tx, file_states_rx) = channel();
         let (untracked_paths_tx, untracked_paths_rx) = channel();
         let (deleted_files_tx, deleted_files_rx) = channel();
+        let (ignored_paths_tx, ignored_paths_rx) = channel();
 
         trace_span!("traverse filesystem").in_scope(|| -> Result<(), SnapshotError> {
             let snapshotter = FileSnapshotter {
@@ -1123,6 +1125,7 @@ impl TreeState {
                 file_states_tx,
                 untracked_paths_tx,
                 deleted_files_tx,
+                ignored_paths_tx,
                 error: OnceLock::new(),
                 progress,
                 max_new_file_size,
@@ -1144,6 +1147,7 @@ impl TreeState {
 
         let stats = SnapshotStats {
             untracked_paths: untracked_paths_rx.into_iter().collect(),
+            ignored_paths: ignored_paths_rx.into_iter().collect(),
         };
         let mut tree_builder = MergedTreeBuilder::new(self.tree.clone());
         trace_span!("process tree entries").in_scope(|| {
@@ -1271,6 +1275,7 @@ struct FileSnapshotter<'a> {
     file_states_tx: Sender<(RepoPathBuf, FileState)>,
     untracked_paths_tx: Sender<(RepoPathBuf, UntrackedReason)>,
     deleted_files_tx: Sender<RepoPathBuf>,
+    ignored_paths_tx: Sender<(RepoPathBuf, IgnoredPathType)>,
     error: OnceLock<SnapshotError>,
     progress: Option<&'a SnapshotProgress<'a>>,
     max_new_file_size: u64,
@@ -1357,11 +1362,16 @@ impl FileSnapshotter<'_> {
             .into_string()
             .map_err(|path| SnapshotError::InvalidUtf8Path { path })?;
 
-        if RESERVED_DIR_NAMES.contains(&name_string.as_str()) {
-            return Ok(None);
-        }
         let name = RepoPathComponent::new(&name_string).unwrap();
         let path = dir.join(name);
+        if RESERVED_DIR_NAMES.contains(&name_string.as_str()) {
+            if name_string == ".jj" && file_type.is_dir() {
+                self.ignored_paths_tx
+                    .send((path, IgnoredPathType::Directory))
+                    .ok();
+            }
+            return Ok(None);
+        }
         let maybe_current_file_state = file_states.get_at(dir, name);
         if let Some(file_state) = &maybe_current_file_state
             && file_state.file_type == FileType::GitSubmodule
@@ -1374,6 +1384,11 @@ impl FileSnapshotter<'_> {
             if git_ignore.matches(&path.to_internal_dir_string())
                 && self.force_tracking_matcher.visit(&path).is_nothing()
             {
+                if file_states.is_empty() {
+                    self.ignored_paths_tx
+                        .send((path.clone(), IgnoredPathType::Directory))
+                        .ok();
+                }
                 // If the whole directory is ignored by .gitignore, visit only
                 // paths we're already tracking. This is because .gitignore in
                 // ignored directory must be ignored. It's also more efficient.
@@ -1404,6 +1419,9 @@ impl FileSnapshotter<'_> {
             {
                 // If it wasn't already tracked and it matches
                 // the ignored paths, then ignore it.
+                self.ignored_paths_tx
+                    .send((path.clone(), IgnoredPathType::File))
+                    .ok();
                 Ok(None)
             } else if maybe_current_file_state.is_none()
                 && !self.start_tracking_matcher.matches(&path)
